@@ -421,6 +421,7 @@ function Aurora:CreateWindow(titleText, subtitle)
 	-- MOBIL ICIN DUZENLENDI: Telefon ekranlarinda devasa durmamasi icin otomatik kucultme orani eklendi
 	local isMobile = UIS.TouchEnabled and not UIS.MouseEnabled
 	local initialScale = isMobile and 0.65 or 0.85
+	local customScale = nil
 	local uiscale = new("UIScale", { Scale = initialScale })
 	uiscale.Parent = holder
 	holder.Parent = gui
@@ -434,11 +435,16 @@ function Aurora:CreateWindow(titleText, subtitle)
 		return math.max(0.4, math.min(3, s))
 	end
 
+	local function targetScale()
+		return customScale or fitScale()
+	end
+
 	-- slider surukleme sirasinda her harekette tum arayuzu yeniden olceklemek takiliyordu (ve slider'in kendisi de oynuyordu):
 	-- deger kisa bir duraklamadan sonra tek seferde, yumusak bir gecisle uygulanir
 	local scaleTok = 0
 	function Aurora:SetMenuScale(scaleVal)
 		local target = math.clamp(scaleVal, 0.4, 1.5)
+		customScale = target
 		scaleTok = scaleTok + 1
 		local my = scaleTok
 		task.delay(0.12, function()
@@ -446,7 +452,7 @@ function Aurora:CreateWindow(titleText, subtitle)
 		end)
 	end
 	function Aurora:GetMenuScale()
-		return uiscale.Scale
+		return customScale or uiscale.Scale
 	end
 
 	new("ImageLabel", {
@@ -692,10 +698,10 @@ function Aurora:CreateWindow(titleText, subtitle)
 				holder.Position = UDim2.fromOffset(math.floor(vp.X / 2), math.floor(vp.Y / 2))
 			end
 			holder.Visible = true
-			tween(uiscale, 0.5, { Scale = fitScale() }, Enum.EasingStyle.Back)
+			tween(uiscale, 0.5, { Scale = targetScale() }, Enum.EasingStyle.Back)
 			tween(bgLayer, 0.35, { GroupTransparency = 0 })
 		else
-			tween(uiscale, 0.25, { Scale = initialScale }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+			tween(uiscale, 0.25, { Scale = targetScale() * 0.88 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
 			tween(bgLayer, 0.25, { GroupTransparency = 1 })
 			task.delay(0.26, function() if not isOpen then holder.Visible = false end end)
 		end
@@ -1051,6 +1057,90 @@ function Aurora:CreateWindow(titleText, subtitle)
 				return {
 					Frame = r,
 					SetText = function(nt) __trLb.Text = T_(tostring(nt)) end,
+					SetOrder = function(n) if type(n) == "number" then r.LayoutOrder = n end end,
+				}
+			end
+
+			function Section:AddInfo(t, col, customOrder)
+				if type(t) == "table" then
+					local o = t
+					t = o.Text or o.Name or ""
+					col = o.Color
+					customOrder = o.Order or o.LayoutOrder
+				end
+				local r = row(32, t, nil, customOrder)
+				r.AutomaticSize = Enum.AutomaticSize.Y
+				pad(14, 8, 14, 8).Parent = r
+				list(0).Parent = r
+				local l = label({ Text = tostring(t), TextSize = 12, TextColor3 = col or T.sub, TextWrapped = true, AutomaticSize = Enum.AutomaticSize.Y, Size = UDim2.new(1, 0, 0, 16) })
+				l.Parent = r
+				return {
+					Frame = r,
+					Label = l,
+					Set = function(text, c)
+						text = tostring(text)
+						if l.Text ~= text then l.Text = text end
+						l.TextColor3 = c or T.sub
+					end,
+					SetOrder = function(n) if type(n) == "number" then r.LayoutOrder = n end end,
+				}
+			end
+
+			function Section:AddProgress(t, customOrder)
+				if type(t) == "table" then
+					customOrder = t.Order or t.LayoutOrder
+					t = t.Name or t.Title or t.Text or "Progress"
+				end
+				local r = row(48, t, nil, customOrder)
+				label({ Text = T_(t), TextSize = 12, Size = UDim2.new(1, -130, 0, 22), Position = UDim2.fromOffset(14, 4) }).Parent = r
+				local pct = label({ Text = "0%", Font = Enum.Font.Code, TextSize = 11, TextColor3 = T.sub, TextXAlignment = Enum.TextXAlignment.Right, Size = UDim2.new(0, 130, 0, 22), Position = UDim2.new(1, -144, 0, 4) })
+				pct.Parent = r
+				local trk = new("Frame", { Size = UDim2.new(1, -28, 0, 8), Position = UDim2.fromOffset(14, 32), BackgroundColor3 = T.bg1, BorderSizePixel = 0 }, { corner(4) })
+				onThemeChange(function(k, c) if k == "bg1" then trk.BackgroundColor3 = c end end)
+				trk.Parent = r
+				local fill = new("Frame", { Size = UDim2.fromScale(0, 1), BackgroundColor3 = Color3.new(1, 1, 1), BorderSizePixel = 0 }, { corner(4) })
+				accentGrad(fill, 0)
+				fill.Parent = trk
+				return {
+					Frame = r,
+					Set = function(frac, text, c)
+						frac = math.clamp(tonumber(frac) or 0, 0, 1)
+						tween(fill, 0.15, { Size = UDim2.fromScale(frac, 1) })
+						pct.Text = text and tostring(text) or string.format("%d%%", math.floor(frac * 100 + 0.5))
+						pct.TextColor3 = c or T.sub
+					end,
+					SetOrder = function(n) if type(n) == "number" then r.LayoutOrder = n end end,
+				}
+			end
+
+			function Section:AddEntry(t, sub, btnText, cb, customOrder)
+				if type(t) == "table" then
+					local o = t
+					t = o.Name or o.Title or ""
+					sub = o.Sub or o.Subtitle or ""
+					btnText = o.ButtonText or o.BtnText or "GO"
+					cb = o.Callback or o.Cb
+					customOrder = o.Order or o.LayoutOrder
+				end
+				local r = row(48, t, nil, customOrder)
+				hover(r)
+				label({ Text = tostring(t), Font = Enum.Font.GothamBold, TextSize = 13, Size = UDim2.new(1, -170, 0, 20), Position = UDim2.fromOffset(14, 6) }).Parent = r
+				local subL = label({ Text = tostring(sub or ""), TextSize = 11, TextColor3 = T.dim, TextTruncate = Enum.TextTruncate.AtEnd, Size = UDim2.new(1, -170, 0, 16), Position = UDim2.fromOffset(14, 26) })
+				subL.Parent = r
+				local st = label({ Text = "", Font = Enum.Font.GothamBlack, TextSize = 10, TextColor3 = T.err, TextXAlignment = Enum.TextXAlignment.Center, Size = UDim2.fromOffset(62, 20), Position = UDim2.new(1, -150, 0.5, -10) })
+				st.Parent = r
+				local active = false
+				local btn = new("TextButton", { Text = tostring(btnText or "GO"), Size = UDim2.fromOffset(60, 26), Position = UDim2.new(1, -74, 0.5, -13), BackgroundColor3 = T.row2, Font = Enum.Font.GothamBold, TextSize = 11, TextColor3 = Color3.new(1, 1, 1), AutoButtonColor = false, BorderSizePixel = 0 }, { corner(8) })
+				btn.Parent = r
+				local function paintBtn() btn.BackgroundColor3 = active and accent or T.row2 end
+				onAccent(paintBtn)
+				onThemeChange(function(k) if k == "row2" then paintBtn() end end)
+				btn.MouseButton1Click:Connect(function() if cb then task.spawn(cb) end end)
+				return {
+					Frame = r,
+					SetStatus = function(text) st.Text = tostring(text) st.TextColor3 = (text == "OPEN") and T.text or T.dim end,
+					SetSub = function(text) subL.Text = tostring(text) end,
+					SetActive = function(on) active = on and true or false paintBtn() end,
 					SetOrder = function(n) if type(n) == "number" then r.LayoutOrder = n end end,
 				}
 			end
@@ -1486,20 +1576,25 @@ function Aurora:CreateWindow(titleText, subtitle)
 				return obj
 			end
 
-			function Section:AddTextbox(t, placeholder, cb, customOrder)
+			function Section:AddTextbox(t, placeholder, cb, default, customOrder)
 				if type(t) == "table" then
 					local o = t
 					t = o.Name or o.Title or "Input"
 					placeholder = o.Placeholder or o.PlaceholderText
 					cb = o.Callback or o.Cb
+					default = o.Default
 					customOrder = o.Order or o.LayoutOrder
+				elseif type(default) == "number" and customOrder == nil then
+					-- geriye donuk uyumluluk: AddTextbox(t, ph, cb, order) seklinde cagrildiysa
+					customOrder = default
+					default = nil
 				end
 				local r = row(40, t, nil, customOrder)
 				hover(r)
 				local __trTb = label({ Text = T_(t), Size = UDim2.new(0.45, 0, 1, 0), Position = UDim2.fromOffset(14, 0), TextColor3 = T.text })
 				__trTb.Parent = r
 				regT(__trTb, t)
-				local tb = new("TextBox", { Size = UDim2.new(0.5, -20, 0, 26), Position = UDim2.new(0.5, 6, 0.5, -13), BackgroundColor3 = T.bg1, BackgroundTransparency = 0.3, BorderSizePixel = 0, Text = "", PlaceholderText = placeholder or "...", PlaceholderColor3 = T.dim, TextColor3 = T.text, Font = Enum.Font.Gotham, TextSize = 12, ClearTextOnFocus = false }, { corner(8), pad(10, 0, 10, 0), stroke(T.line, 1, 0.3) })
+				local tb = new("TextBox", { Size = UDim2.new(0.5, -20, 0, 26), Position = UDim2.new(0.5, 6, 0.5, -13), BackgroundColor3 = T.bg1, BackgroundTransparency = 0.3, BorderSizePixel = 0, Text = default and tostring(default) or "", PlaceholderText = placeholder or "...", PlaceholderColor3 = T.dim, TextColor3 = T.text, Font = Enum.Font.Gotham, TextSize = 12, ClearTextOnFocus = false }, { corner(8), pad(10, 0, 10, 0), stroke(T.line, 1, 0.3) })
 				onThemeChange(function(k, c) if k == "bg1" then tb.BackgroundColor3 = c end end)
 				tb.Parent = r
 				local st = tb:FindFirstChildOfClass("UIStroke")
@@ -1508,17 +1603,21 @@ function Aurora:CreateWindow(titleText, subtitle)
 					tween(st, 0.2, { Color = T.line, Transparency = 0.3 })
 					if cb then task.spawn(cb, tb.Text, enter) end
 				end)
-				return {
+				local obj = {
 					Frame = r,
 					TextBox = tb,
 					Get = function() return tb.Text end,
-					Set = function(v) tb.Text = tostring(v or "") end,
+					Set = function(v) tb.Text = tostring(v or "") if cb then task.spawn(cb, tb.Text, false) end end,
 					SetOrder = function(n) if type(n) == "number" then r.LayoutOrder = n end end,
 				}
+				return obj
 			end
 
 			-- Create* kisayol (alias) metodlari: hem tablo ({ Name = "...", Order = 2, Callback = ... }) hem klasik parametre ile calisir
 			Section.CreateLabel = Section.AddLabel
+			Section.CreateInfo = Section.AddInfo
+			Section.CreateProgress = Section.AddProgress
+			Section.CreateEntry = Section.AddEntry
 			Section.CreateContainer = Section.AddContainer
 			Section.CreateCopyCard = Section.AddCopyCard
 			Section.CreateCredit = Section.AddCredit
